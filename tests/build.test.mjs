@@ -55,6 +55,7 @@ test('the per-platform options: path overrides on where a host passes --main-pac
 	for (const arch of ['x86_64', 'arm64']) {
 		const win = options(`windows-${arch}`);
 		for (const want of ['platform=windows', `arch=${arch}`, 'use_mingw=yes', 'use_llvm=yes', 'd3d12=yes']) assert.ok(win.includes(want), `${arch} ${want}`);
+		assert.ok(win.includes('linkflags=-Wl,--no-insert-timestamp'), 'no link time in the PE header: two builds give the same bytes');
 		assert.ok(!win.includes('disable_path_overrides=no'), 'Windows runs its pack beside it, as the official template');
 	}
 	for (const arch of ['arm64', 'arm32', 'x86_64', 'x86_32']) {

@@ -80,7 +80,7 @@ case "$slice" in
     arch="${slice#windows-}"
     opts=(platform=windows "arch=$arch" "${desktop[@]}" use_mingw=yes use_llvm=yes "mingw_prefix=$deps/llvm-mingw" d3d12=yes
           "angle_libs=$deps/angle" "mesa_libs=$deps/mesa" "accesskit_sdk_path=$deps/accesskit/accesskit-c"
-          "winrt_path=$deps/winrt" "${common[@]}")
+          "winrt_path=$deps/winrt" "linkflags=-Wl,--no-insert-timestamp" "${common[@]}")   # no link time: reproducible
     built=("bin/godot.windows.template_release.$arch.llvm.exe") ;;
   macos)
     opts=(platform=macos "${desktop[@]}" use_volk=no disable_path_overrides=no "ccflags=-mllvm -vectorize-slp=false"
