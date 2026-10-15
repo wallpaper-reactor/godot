@@ -93,9 +93,12 @@ jobs:
           retention-days: 30
 
   check:
-    needs: build
+    needs: [slices, build]
     name: check ${{ matrix.slice }}
     runs-on: ${{ matrix.runner }}
+    # Only a slice this run built: a dispatched run may build some (a job's `if` cannot read the matrix; its env can).
+    env:
+      BUILT: ${{ contains(fromJSON(needs.slices.outputs.matrix).include.*.slice, matrix.slice) }}
     strategy:
       fail-fast: false
       matrix:
@@ -103,12 +106,15 @@ jobs:
           - { slice: linux, asset: godot_linux_release_wr.x86_64, runner: ubuntu-24.04 }
           - { slice: macos, asset: godot_macos_release_wr.universal, runner: macos-26 }
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - if: env.BUILT == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: env.BUILT == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ matrix.slice }}
           path: ${{ runner.temp }}/engine
       - name: The hardening check
+        if: env.BUILT == 'true'
         run: |
           chmod +x "$RUNNER_TEMP/engine/${{ matrix.asset }}"
           check/check-hardening.sh "$RUNNER_TEMP/engine/${{ matrix.asset }}"

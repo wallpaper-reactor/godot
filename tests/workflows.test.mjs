@@ -60,3 +60,12 @@ test('a dispatched Build can build some slices with extra scons options (the tri
 	const release = workflows['release.yml'];
 	assert.match(release, /\$event" == push/);
 });
+
+test('a check runs only for a slice the run built (a dispatch may build some)', () => {
+	const build = workflows['build.yml'];
+	const check = build.slice(build.indexOf('\n  check:'));
+	assert.match(check, /needs: \[slices, build\]/);
+	assert.match(check, /BUILT: \$\{\{ contains\(fromJSON\(needs\.slices\.outputs\.matrix\)\.include\.\*\.slice, matrix\.slice\) \}\}/);
+	assert.equal((check.match(/if: env\.BUILT == 'true'/g) ?? []).length, 3, 'every step of the check is gated');
+	assert.doesNotMatch(check, /^ {4}if:/m, 'a job-level if cannot read the matrix');
+});
