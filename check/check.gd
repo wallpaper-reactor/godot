@@ -1,24 +1,29 @@
 # The hardened engine's proof. check-hardening.sh packs this with the deny list and the build profile and mounts it
 # with --main-pack, so it sees exactly what a wallpaper sees.
 # Each line is "PASS <what>" or "FAIL <what>"; the last is "HARDENING OK" or "HARDENING FAILED <n>".
-# User args: <a file outside res:// and user://> <the directory holding it>.
+# User args: <a file outside res:// and user://> <the directory holding it>. An engine without path overrides (no
+# --script) runs it from runner.gd, an autoload (check-hardening.sh --beside).
 extends SceneTree
 
-var failures := 0
+static var failures := 0
 
 
-func check(ok: bool, what: String) -> void:
+static func check(ok: bool, what: String) -> void:
 	print(("PASS " if ok else "FAIL ") + what)
 	if not ok:
 		failures += 1
 
 
-func _json(path: String):
+static func _json(path: String):
 	return JSON.parse_string(FileAccess.get_file_as_string(path))
 
 
 func _initialize() -> void:
-	var args := OS.get_cmdline_user_args()
+	quit(run(OS.get_cmdline_user_args()))
+
+
+# Every check; the exit code: 0 only when all pass.
+static func run(args: PackedStringArray) -> int:
 	var outside_file: String = args[0]
 	var outside_dir: String = args[1]
 	_methods()
@@ -26,11 +31,11 @@ func _initialize() -> void:
 	_paths(outside_file, outside_dir)
 	_get_var()
 	print("HARDENING OK" if failures == 0 else "HARDENING FAILED %d" % failures)
-	quit(0 if failures == 0 else 1)
+	return 0 if failures == 0 else 1
 
 
-# Every method in godot/native-deny-list.json is absent from ClassDB, and from the singleton a script would call.
-func _methods() -> void:
+# Every method in native-deny-list.json is absent from ClassDB, and from the singleton a script would call.
+static func _methods() -> void:
 	var deny = _json("res://native-deny-list.json")
 	check(deny is Dictionary and deny.has("methods"), "control: res://native-deny-list.json reads")
 	check(ClassDB.class_has_method("OS", "get_cmdline_user_args", true), "control: OS.get_cmdline_user_args is bound")
@@ -46,7 +51,7 @@ func _methods() -> void:
 
 
 # Every networking class the refuse list names, and every class the build profile disables, does not exist.
-func _classes() -> void:
+static func _classes() -> void:
 	var disabled: Array = []
 	disabled.append_array(_json("res://refuse-list.json").networkingClasses)
 	disabled.append_array(_json("res://trim.gdbuild").disabled_classes)
@@ -56,7 +61,7 @@ func _classes() -> void:
 
 
 # Scripts reach res:// (the pack) and user:// only: absolute paths, '..' and the OS-path helpers find nothing.
-func _paths(outside_file: String, outside_dir: String) -> void:
+static func _paths(outside_file: String, outside_dir: String) -> void:
 	check(FileAccess.open("res://check.gd", FileAccess.READ) != null, "control: res://check.gd opens")
 	var mine := FileAccess.open("user://wr-check.txt", FileAccess.WRITE)
 	check(mine != null, "control: user:// is writable")
@@ -96,7 +101,7 @@ func _paths(outside_file: String, outside_dir: String) -> void:
 
 
 # No bytes decode into an object, whatever the script asks (decode_variant, every entry to it).
-func _get_var() -> void:
+static func _get_var() -> void:
 	var f := FileAccess.open("user://wr-var.bin", FileAccess.WRITE)
 	f.store_var(Gradient.new(), true)
 	f.store_var(42)

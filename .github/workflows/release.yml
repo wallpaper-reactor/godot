@@ -27,15 +27,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: The run is a successful Build of this repository's main
+      - name: The run is a successful Build of a push to this repository's main
         id: run
         run: |
           [[ "$TAG" =~ ^godot-engine-[0-9]+\.[0-9]+(\.[0-9]+)?-wr[0-9]+$ ]] || { echo "bad tag $TAG"; exit 1; }
           ! gh release view "$TAG" >/dev/null 2>&1 || { echo "$TAG exists; releases are never replaced"; exit 1; }
-          read -r name conclusion branch sha < <(gh run view "$RUN_ID" --json workflowName,conclusion,headBranch,headSha \
-            --jq '[.workflowName, .conclusion, .headBranch, .headSha] | @tsv')
-          [[ "$name" == Build && "$conclusion" == success && "$branch" == main ]] \
-            || { echo "run $RUN_ID is '$name' on '$branch', $conclusion"; exit 1; }
+          read -r name conclusion branch event sha < <(gh run view "$RUN_ID" --json workflowName,conclusion,headBranch,event,headSha \
+            --jq '[.workflowName, .conclusion, .headBranch, .event, .headSha] | @tsv')
+          # A push run builds exactly what main holds; a dispatched one may carry extra options.
+          [[ "$name" == Build && "$conclusion" == success && "$branch" == main && "$event" == push ]] \
+            || { echo "run $RUN_ID is '$name' ($event) on '$branch', $conclusion"; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Download and verify

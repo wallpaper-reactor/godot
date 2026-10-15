@@ -1,8 +1,9 @@
 # Packs the hardening check (check-hardening.sh) into res://check.pck with the engine under test, or, given user args
-# `<out.pck> <file>...`, those project files into res://<out.pck>.
+# `<out.pck> <file>...`, those project files into res://<out.pck>. A file given as `<name>:<source>` is packed as
+# <name> from <source>.
 extends SceneTree
 
-const FILES := ["project.godot", "check.gd", "native-deny-list.json", "refuse-list.json", "trim.gdbuild"]
+const FILES := ["project.godot", "check.gd", "runner.gd", "native-deny-list.json", "refuse-list.json", "trim.gdbuild"]
 
 
 func _initialize() -> void:
@@ -11,9 +12,11 @@ func _initialize() -> void:
 	var files: Array = FILES if args.is_empty() else Array(args.slice(1))
 	var packer := PCKPacker.new()
 	var err := packer.pck_start("res://" + out)
-	for name in files:
+	for entry in files:
+		var name: String = entry.get_slice(":", 0)
+		var source: String = entry.get_slice(":", 1) if ":" in entry else name
 		if err == OK:
-			err = packer.add_file("res://" + name, "res://" + name)
+			err = packer.add_file("res://" + name, "res://" + source)
 	if err == OK:
 		err = packer.flush()
 	print("packed" if err == OK else "pack failed: %s" % error_string(err))

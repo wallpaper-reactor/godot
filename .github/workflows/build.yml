@@ -8,7 +8,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  # By hand: some slices (comma-separated, default all) with extra scons options, for measurements. The release
+  # workflow publishes push runs only, so such a run is never released.
   workflow_dispatch:
+    inputs:
+      slices:
+        description: Slices to build, comma-separated (empty for all)
+        default: ''
+      scons:
+        description: Extra scons options, last on the command line
+        default: ''
 
 permissions:
   contents: read
@@ -27,8 +36,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: read
+        env:
+          SLICES: ${{ inputs.slices }}
         run: |
-          python3 -c 'import json; s = json.load(open("slices.json"))["slices"]; print("matrix=" + json.dumps({"include": [{"slice": k, **v} for k, v in s.items()]}))' >> "$GITHUB_OUTPUT"
+          python3 -c 'import json, sys; s = json.load(open("slices.json"))["slices"]; only = [x for x in sys.argv[1].split(",") if x]; print("matrix=" + json.dumps({"include": [{"slice": k, **v} for k, v in s.items() if not only or k in only]}))' "$SLICES" >> "$GITHUB_OUTPUT"
 
   build:
     needs: [test, slices]
@@ -62,7 +73,9 @@ jobs:
         env:
           WR_GODOT_CACHE: ${{ runner.temp }}/cache
           WR_GODOT_OUT: ${{ runner.temp }}/out
-        run: scripts/build.sh "${{ matrix.slice }}"
+          SCONS_EXTRA: ${{ inputs.scons }}
+        # SCONS_EXTRA is split into options on purpose.
+        run: scripts/build.sh "${{ matrix.slice }}" -- $SCONS_EXTRA
 
       - name: Attest
         if: github.event_name != 'pull_request'

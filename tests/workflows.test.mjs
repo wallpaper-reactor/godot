@@ -49,3 +49,12 @@ test('only the release workflow can write', () => {
 	assert.doesNotMatch(workflows['build.yml'], /contents: write/);
 	assert.match(workflows['release.yml'], /^on:\n {2}workflow_dispatch:/m);
 });
+
+test('a dispatched Build can build some slices with extra scons options (the trim measurements), and is never released', () => {
+	const build = workflows['build.yml'];
+	assert.match(build, /workflow_dispatch:\n {4}inputs:\n {6}slices:/);
+	assert.match(build, /\n {6}scons:/);
+	assert.match(build, /run: scripts\/build\.sh "\$\{\{ matrix\.slice \}\}" -- \$SCONS_EXTRA/);
+	const release = workflows['release.yml'];
+	assert.match(release, /\$event" == push/);
+});
