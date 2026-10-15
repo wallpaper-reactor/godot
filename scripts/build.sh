@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds one slice of the hardened Godot engine (slices.json names them and their assets): the source godot.env pins,
-# made ready by scripts/prepare.sh (patches/harden.patch and the deny-list header; macOS adds
+# made ready by scripts/prepare.sh (patches/harden.patch, patches/movie-png-fast.patch and the deny-list header; macOS adds
 # patches/macos-accessory.patch), the trim (profile/trim.sh module switches, profile/trim.gdbuild disabled classes),
 # then scons with the slice's options.
 #
@@ -73,7 +73,7 @@ common=(target=template_release production=yes "${standard[@]}" "build_profile=$
 # The desktop slices: optimised for size with full LTO, a third smaller with no measured cost in startup or fps
 # (Android is already optimize=size).
 desktop=(optimize=size lto=full)
-patches=()
+patches=("$engine/patches/movie-png-fast.patch")   # every slice
 case "$slice" in
   linux)
     opts=(platform=linuxbsd arch=x86_64 disable_path_overrides=no "${desktop[@]}" "${common[@]}")
@@ -91,7 +91,7 @@ case "$slice" in
     opts=(platform=macos "${desktop[@]}" metal=no disable_path_overrides=no "ccflags=-mllvm -vectorize-slp=false"
           "angle_libs=$deps/angle" "accesskit_sdk_path=$deps/accesskit/accesskit-c"
           "${common[@]}")
-    patches=("$engine/patches/macos-accessory.patch")
+    patches+=("$engine/patches/macos-accessory.patch")
     built=(bin/godot.macos.template_release.x86_64 bin/godot.macos.template_release.arm64) ;;
   android-*)
     arch="${slice#android-}"

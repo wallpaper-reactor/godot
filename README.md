@@ -5,7 +5,7 @@ Builds of the [Godot Engine](https://godotengine.org) used by
 
 They are Godot export templates (release, no editor) with a small hardening for running
 untrusted wallpapers: a wallpaper can read its own pack and write its own user folder, and
-nothing else on the machine. This repository is **not a fork**. It holds two patch files, a
+nothing else on the machine. This repository is **not a fork**. It holds three patch files, a
 build profile and the scripts that build stock Godot with them. CI fetches the upstream tag,
 checks the commit, applies the patches and builds every slice.
 
@@ -16,6 +16,7 @@ checks the commit, applies the patches and builds every slice.
 | `godot.env` | The upstream tag and the commit it must resolve to, and the SCons version |
 | `patches/harden.patch` | The hardening, every slice (the hunks are listed below) |
 | `patches/macos-accessory.patch` | One macOS change: no Dock icon for a wallpaper |
+| `patches/movie-png-fast.patch` | A movie frame written as a PNG at zlib level 1 with the Sub filter, every slice (below) |
 | `native-deny-list.json` | The methods the engine never binds. Data, not code: adding one is a JSON edit |
 | `profile/trim.sh`, `profile/trim.gdbuild` | The trim: module switches, and classes compiled out |
 | `slices.json` | The nine slices, their release asset names and their CI runners |
@@ -78,6 +79,9 @@ hunks remain because nothing else can do their job. Every hunk in `harden.patch`
 | `core/extension/gdextension_manager.cpp` | 1 | Reads the extension list past the pack (`SKIP_PACK`), so it is the host's list, never one a pack ships. Stock loads that list at start, before any script runs: native code a pack names | GDExtension cannot be compiled out, and a host may load its own extension |
 | `platform/macos/os_macos.mm` | 1 | With `WR_GODOT_ACCESSORY` set, the engine starts as an accessory app: no Dock icon | The policy is set in code, which overrides `LSUIElement` |
 | `platform/macos/godot_application.mm` | 1 | With `WR_GODOT_ACCESSORY` set, the engine never activates itself or takes focus | As above |
+| `drivers/png/png_driver_common.h` | 1 | `movie-png-fast.patch`: declares `image_to_png_fast`, template builds only | The stock encoder takes no compression setting |
+| `drivers/png/png_driver_common.cpp` | 1 | `image_to_png_fast`: the same pixels as `image_to_png`, written by libpng's full writer at zlib level 1 with the Sub filter (about seven times faster, a quarter larger); RGB8 and RGBA8 only, any other format takes the stock encoder | The simplified writer `image_to_png` uses has a fixed level 6 and every filter, or a fast flag at level 3 |
+| `servers/movie_writer/movie_writer_pngwav.cpp` | 2 | `write_frame` calls `image_to_png_fast`, the one caller, so every other PNG save is stock | `--write-movie` has no setting for the PNG compression level |
 <!-- /hunks -->
 
 Already build options rather than patches: networking (the ENet, WebSocket, WebRTC, UPnP,

@@ -25,8 +25,8 @@ const documented = Object.fromEntries(
 	[...table.matchAll(/^\| `([^`]+)` \| (\d+) \|/gm)].map((m) => [m[1], Number(m[2])])
 );
 
-test('there are two patches: the hardening and the macOS one', () => {
-	assert.deepEqual(patchNames, ['harden.patch', 'macos-accessory.patch']);
+test('there are three patches: the hardening, the macOS one and the fast movie PNG', () => {
+	assert.deepEqual(patchNames, ['harden.patch', 'macos-accessory.patch', 'movie-png-fast.patch']);
 });
 
 test('the README lists every patched file with its hunk count, and nothing else', () => {
@@ -52,4 +52,18 @@ test('harden.patch is template-only, includes the generated header, and decodes 
 		if (added === '+#include "core/io/file_access.h"') continue;
 		assert.match(added, /TOOLS_ENABLED/, hunk.slice(0, 200));
 	}
+});
+
+test('movie-png-fast.patch is template-only and touches the movie writer alone', () => {
+	const patch = readFileSync(join(engine, 'patches/movie-png-fast.patch'), 'utf8');
+	assert.match(patch, /image_to_png_fast\(p_image, png_buffer\)/);
+	assert.match(patch, /png_set_compression_level\(png, 1\)/);
+	for (const hunk of patch.split(/^@@ /m).slice(1)) {
+		const added = hunk.split('\n').filter((l) => l.startsWith('+')).join('\n');
+		assert.match(hunk, /TOOLS_ENABLED/, hunk.slice(0, 200));
+		assert.ok(added.length > 0);
+	}
+	// The stock Image::save_png path is not edited.
+	assert.doesNotMatch(patch, /^diff --git a\/core\//m);
+	assert.doesNotMatch(patch, /^diff --git a\/drivers\/png\/(resource_saver|image_loader)/m);
 });

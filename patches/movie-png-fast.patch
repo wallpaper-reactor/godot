@@ -1,0 +1,106 @@
+A movie frame written at zlib level 1 with the Sub filter, applied by scripts/prepare.sh to every slice. Stock
+Godot's `--write-movie` to a `.png` writes each frame through `Image::save_png_to_buffer`, libpng's simplified writer
+at its default (zlib level 6, every filter tried per row): on a 1080x1920 frame that is about 0.4 s of one core, and
+the whole cost of a composition render once the GPU draws the frame. This writes the same pixels (PNG is lossless)
+at level 1 with the Sub filter, about seven times faster and a quarter larger on disk. Only `MovieWriterPNGWAV::
+write_frame` calls it, only RGB8 and RGBA8 take the fast path (any other format takes the stock encoder), and every
+other PNG save, the editor and the exported pack's own `save_png` included, is unchanged. Template builds only.
+
+diff --git a/drivers/png/png_driver_common.cpp b/drivers/png/png_driver_common.cpp
+index aa69ad3..ee48015 100644
+--- a/drivers/png/png_driver_common.cpp
++++ b/drivers/png/png_driver_common.cpp
+@@ -204,4 +204,52 @@ Error image_to_png(const Ref<Image> &p_image, Vector<uint8_t> &p_buffer) {
+ 
+ 	return OK;
+ }
++
++#ifndef TOOLS_ENABLED
++static void wr_png_write(png_structp p_png, png_bytep p_data, png_size_t p_length) {
++	Vector<uint8_t> *buffer = static_cast<Vector<uint8_t> *>(png_get_io_ptr(p_png));
++	const int offset = buffer->size();
++	buffer->resize(offset + p_length);
++	memcpy(buffer->ptrw() + offset, p_data, p_length);
++}
++
++static void wr_png_flush(png_structp) {}
++
++// Apart from image_to_png_fast: a libpng error longjmps out of here, so nothing in this function owns memory.
++static bool wr_png_encode(const uint8_t *p_pixels, int p_width, int p_height, int p_channels, Vector<uint8_t> *p_buffer) {
++	png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
++	if (!png) {
++		return false;
++	}
++	png_infop info = png_create_info_struct(png);
++	if (!info || setjmp(png_jmpbuf(png))) {
++		png_destroy_write_struct(&png, &info);
++		return false;
++	}
++	png_set_write_fn(png, p_buffer, wr_png_write, wr_png_flush);
++	png_set_IHDR(png, info, p_width, p_height, 8, p_channels == 4 ? PNG_COLOR_TYPE_RGBA : PNG_COLOR_TYPE_RGB,
++			PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
++	png_set_compression_level(png, 1);
++	png_set_filter(png, PNG_FILTER_TYPE_BASE, PNG_FILTER_SUB);
++	png_write_info(png, info);
++	for (int y = 0; y < p_height; y++) {
++		png_write_row(png, p_pixels + (size_t)y * p_width * p_channels);
++	}
++	png_write_end(png, info);
++	png_destroy_write_struct(&png, &info);
++	return true;
++}
++
++Error image_to_png_fast(const Ref<Image> &p_image, Vector<uint8_t> &p_buffer) {
++	const Image::Format format = p_image->get_format();
++	if (format != Image::FORMAT_RGB8 && format != Image::FORMAT_RGBA8) {
++		return image_to_png(p_image, p_buffer);
++	}
++	const int channels = format == Image::FORMAT_RGBA8 ? 4 : 3;
++	const Vector<uint8_t> data = p_image->get_data();
++	ERR_FAIL_COND_V(data.size() != p_image->get_width() * p_image->get_height() * channels, FAILED);
++	ERR_FAIL_COND_V(!wr_png_encode(data.ptr(), p_image->get_width(), p_image->get_height(), channels, &p_buffer), FAILED);
++	return OK;
++}
++#endif
+ } // namespace PNGDriverCommon
+diff --git a/drivers/png/png_driver_common.h b/drivers/png/png_driver_common.h
+index dea7229..f3365ba 100644
+--- a/drivers/png/png_driver_common.h
++++ b/drivers/png/png_driver_common.h
+@@ -40,4 +40,9 @@ Error png_to_image(const uint8_t *p_source, size_t p_size, bool p_force_linear,
+ // Append p_image, as a png, to p_buffer.
+ // Contents of p_buffer is unspecified if error returned.
+ Error image_to_png(const Ref<Image> &p_image, Vector<uint8_t> &p_buffer);
++#ifndef TOOLS_ENABLED
++// Wallpaper Reactor: image_to_png at zlib level 1 with the Sub filter, for a movie frame (the same pixels, written about
++// seven times faster). Other formats than RGB8 and RGBA8 take image_to_png.
++Error image_to_png_fast(const Ref<Image> &p_image, Vector<uint8_t> &p_buffer);
++#endif
+ } // namespace PNGDriverCommon
+diff --git a/servers/movie_writer/movie_writer_pngwav.cpp b/servers/movie_writer/movie_writer_pngwav.cpp
+index 3b6c81c..c90354c 100644
+--- a/servers/movie_writer/movie_writer_pngwav.cpp
++++ b/servers/movie_writer/movie_writer_pngwav.cpp
+@@ -33,6 +33,9 @@
+ #include "core/config/project_settings.h"
+ #include "core/io/dir_access.h"
+ #include "core/io/file_access.h"
++#ifndef TOOLS_ENABLED
++#include "drivers/png/png_driver_common.h"
++#endif
+ 
+ uint32_t MovieWriterPNGWAV::get_audio_mix_rate() const {
+ 	return mix_rate;
+@@ -144,7 +147,12 @@ Error MovieWriterPNGWAV::write_begin(const Size2i &p_movie_size, uint32_t p_fps,
+ Error MovieWriterPNGWAV::write_frame(const Ref<Image> &p_image, const int32_t *p_audio_data) {
+ 	ERR_FAIL_COND_V(f_wav.is_null(), ERR_UNCONFIGURED);
+ 
++#ifndef TOOLS_ENABLED
++	Vector<uint8_t> png_buffer; // Wallpaper Reactor: a movie frame at zlib level 1, not 6.
++	ERR_FAIL_COND_V(PNGDriverCommon::image_to_png_fast(p_image, png_buffer) != OK, FAILED);
++#else
+ 	Vector<uint8_t> png_buffer = p_image->save_png_to_buffer();
++#endif
+ 
+ 	Ref<FileAccess> fi = FileAccess::open(base_path + zeros_str(frame_count) + ".png", FileAccess::WRITE);
+ 	fi->store_buffer(png_buffer.ptr(), png_buffer.size());
