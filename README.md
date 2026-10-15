@@ -36,14 +36,18 @@ The slices are `linux`, `web`, `windows-x86_64`, `windows-arm64`, `macos`, `andr
 `$WR_GODOT_OUT/<asset>` with a `.sha256` beside it. `--dry-run` prints the scons options and
 builds nothing. Everything after `--` goes to scons last, so it overrides. The desktop slices (Linux,
 Windows, macOS) are built with `optimize=size lto=full`: a fifth to two fifths smaller, with no
-measured cost in startup or frame rate.
+measured cost in startup or frame rate. **No slice has a RenderingDevice driver** (Vulkan, D3D12,
+Metal) or glslang: every wallpaper runs on the Compatibility renderer, on native OpenGL or on ANGLE
+(D3D11 on Windows, Metal on macOS). A host passes `--rendering-method gl_compatibility
+--rendering-driver opengl3` (or `opengl3_angle`), so a project that names `forward_plus` or `mobile`
+still starts.
 
 | Slice | Toolchain | Notes |
 | --- | --- | --- |
 | `linux` | Godot's buildroot SDK `godot-2023.08.x-4` (glibc 2.28) | Path overrides on, so `--main-pack` works |
 | `web` | emscripten 4.0.20 | No threads |
-| `windows-*` | llvm-mingw 20251118 | The official recipe: D3D12 with Mesa NIR, ANGLE, AccessKit, WinRT |
-| `macos` | Xcode 26.2 | Universal. Path overrides on. Unsigned. The SLP vectoriser is off so the output is reproducible |
+| `windows-*` | llvm-mingw 20251118 | The official recipe less D3D12: ANGLE, AccessKit, WinRT |
+| `macos` | Xcode 26.2 | Universal. ANGLE, no Metal or MoltenVK. Path overrides on. Unsigned. The SLP vectoriser is off so the output is reproducible |
 | `android-*` | NDK 29.0.14206865 | `libgodot_android.so` for one ABI. Optimised for size. Swappy off |
 
 To check a Linux or macOS build:

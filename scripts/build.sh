@@ -8,13 +8,18 @@
 #            runs. Godot's own Linux SDK (buildroot, glibc 2.28), as the official build.
 #   web      the no-threads web release template, with the emscripten Godot's 4.7 build container uses
 #   windows-<x86_64|arm64>
-#            cross-built with llvm-mingw: the official 4.7 recipe (production, D3D12 with Mesa NIR, ANGLE, AccessKit,
-#            WinRT), each library the llvm build of the version that recipe pins. Path overrides stay compiled out, as in
+#            cross-built with llvm-mingw: the official 4.7 recipe (production, ANGLE, AccessKit, WinRT) less D3D12, each
+#            library the llvm build of the version that recipe pins. Path overrides stay compiled out, as in
 #            the official template: a host runs the engine beside its pack.
-#   macos    universal (x86_64 and arm64 joined with lipo), path overrides on, the official 4.7 recipe (MoltenVK, ANGLE,
-#            AccessKit) on Xcode XCODE_VERSION, the SLP vectoriser off (below). Unsigned: whoever ships it signs it.
+#   macos    universal (x86_64 and arm64 joined with lipo), path overrides on, the official 4.7 recipe (ANGLE, AccessKit)
+#            less Metal and MoltenVK on Xcode XCODE_VERSION, the SLP vectoriser off (below). Unsigned: whoever ships it signs it.
 #   android-<arm64|arm32|x86_64|x86_32>
 #            libgodot_android.so for one ABI, with the NDK this Godot pins; optimize=size; swappy off (Vulkan frame pacing).
+#
+# No slice has a RenderingDevice driver (Vulkan, D3D12, Metal) or glslang: every wallpaper runs on the Compatibility
+# renderer, on native OpenGL or on ANGLE (D3D11 on Windows, Metal on macOS), and every host passes
+# --rendering-method gl_compatibility so a project naming forward_plus or mobile still starts
+# (docs/evidence/godot-hardening/trim/README.md, wr6).
 #
 # Every input is pinned: the source commit (godot.env), SCons, each downloaded archive by SHA-256, each toolchain by
 # version. The SLP vectoriser is off on macOS because it is not deterministic in Xcode's clang (the same command gave
@@ -64,7 +69,7 @@ SRC="${WR_GODOT_SRC:-$cache/godot}"
 OUT="${WR_GODOT_OUT:-$cache/out}"
 deps="$cache/deps"
 common=(target=template_release production=yes "${standard[@]}" "build_profile=$engine/profile/trim.gdbuild"
-        warnings=no progress=no)
+        vulkan=no module_glslang_enabled=no warnings=no progress=no)
 # The desktop slices: optimised for size with full LTO, a third smaller with no measured cost in startup or fps
 # (Android is already optimize=size).
 desktop=(optimize=size lto=full)
@@ -78,13 +83,13 @@ case "$slice" in
     built=(bin/godot.web.template_release.wasm32.nothreads.zip) ;;
   windows-x86_64|windows-arm64)
     arch="${slice#windows-}"
-    opts=(platform=windows "arch=$arch" "${desktop[@]}" use_mingw=yes use_llvm=yes "mingw_prefix=$deps/llvm-mingw" d3d12=yes
-          "angle_libs=$deps/angle" "mesa_libs=$deps/mesa" "accesskit_sdk_path=$deps/accesskit/accesskit-c"
+    opts=(platform=windows "arch=$arch" "${desktop[@]}" use_mingw=yes use_llvm=yes "mingw_prefix=$deps/llvm-mingw" d3d12=no
+          "angle_libs=$deps/angle" "accesskit_sdk_path=$deps/accesskit/accesskit-c"
           "winrt_path=$deps/winrt" "linkflags=-Wl,--no-insert-timestamp" "${common[@]}")   # no link time: reproducible
     built=("bin/godot.windows.template_release.$arch.llvm.exe") ;;
   macos)
-    opts=(platform=macos "${desktop[@]}" use_volk=no disable_path_overrides=no "ccflags=-mllvm -vectorize-slp=false"
-          "vulkan_sdk_path=$deps/moltenvk" "angle_libs=$deps/angle" "accesskit_sdk_path=$deps/accesskit/accesskit-c"
+    opts=(platform=macos "${desktop[@]}" metal=no disable_path_overrides=no "ccflags=-mllvm -vectorize-slp=false"
+          "angle_libs=$deps/angle" "accesskit_sdk_path=$deps/accesskit/accesskit-c"
           "${common[@]}")
     patches=("$engine/patches/macos-accessory.patch")
     built=(bin/godot.macos.template_release.x86_64 bin/godot.macos.template_release.arm64) ;;
@@ -165,39 +170,28 @@ case "$slice" in
     source "$EMSDK/emsdk_env.sh" >/dev/null 2>&1
     emcc --version | head -1 | grep -qF " $EMSCRIPTEN_VERSION " || die "emcc is not $EMSCRIPTEN_VERSION" ;;
   windows-*)
-    nir=https://github.com/godotengine/godot-nir-static/releases/download/25.3.1-3/godot-nir-static
     fetch "$LLVM_MINGW" 53a0c22caa46b501e1c089e1c31b24a7c0e0d5a86f8ad12b131aafd4cee01ef4 \
       "https://github.com/mstorsjo/llvm-mingw/releases/download/20251118/$LLVM_MINGW"
     fetch winrt-headers-72.zip 9310868d0a82d11b7ae1943c4f35c202c6c9a692ee2deec4bde241fbe2639961 \
       https://github.com/godotengine/winrt-mingw/releases/download/72/winrt-headers.zip
     case "$arch" in
       x86_64)
-        fetch angle-x86_64-llvm.zip 5d18ac9682e78aa712ced326ea05ff21822a2dda1e714547b5aca1f07e952b29 "$angle-x86_64-llvm-release.zip"
-        fetch mesa-x86_64-llvm.zip 2029b6a5f21572473f9e545e089d8949bedc6c806a41f9e4a38f34496ddab110 "$nir-x86_64-llvm-release.zip" ;;
+        fetch angle-x86_64-llvm.zip 5d18ac9682e78aa712ced326ea05ff21822a2dda1e714547b5aca1f07e952b29 "$angle-x86_64-llvm-release.zip" ;;
       arm64)
-        fetch angle-arm64-llvm.zip 4b6147fc84e98d5463a9172ca1141c6a03dbfcdd6d4800ab1bcc69e724d2f9fa "$angle-arm64-llvm-release.zip"
-        fetch mesa-arm64-llvm.zip 57755c8881d6be05ec6e0d94921a09e30a35ef38dfd18a4c5da2c318d5ce11dc "$nir-arm64-llvm-release.zip" ;;
+        fetch angle-arm64-llvm.zip 4b6147fc84e98d5463a9172ca1141c6a03dbfcdd6d4800ab1bcc69e724d2f9fa "$angle-arm64-llvm-release.zip" ;;
     esac
     accesskit
     unpack "$LLVM_MINGW" "$deps/llvm-mingw" --strip-components=1
     unpack winrt-headers-72.zip "$deps/winrt"
-    # Godot looks for <angle_libs>-<arch>-llvm and <mesa_libs>-<arch>-llvm.
+    # Godot looks for <angle_libs>-<arch>-llvm.
     unpack "angle-$arch-llvm.zip" "$deps/angle-$arch-llvm"
-    unpack "mesa-$arch-llvm.zip" "$deps/mesa-$arch-llvm"
     export MINGW_PREFIX="$deps/llvm-mingw" ;;   # the platform is offered only when this names a mingw (detect.py can_build)
   macos)
     [[ "$(uname -s)" == Darwin ]] || die "the macos slice builds on macOS with Xcode $XCODE_VERSION"
     xcodebuild -version | head -1 | grep -qx "Xcode $XCODE_VERSION" || die "needs Xcode $XCODE_VERSION (xcode-select -s), not $(xcodebuild -version | head -1)"
-    fetch MoltenVK-all-1.4.1.tar.xz 1672318a6b8390a4a5ca61c91345bdf727b3afc1c1ad0dc3cbc2fbde6c2b6883 \
-      https://github.com/godotengine/moltenvk-osxcross/releases/download/moltenvk-1.4.1/MoltenVK-all.tar.xz
     fetch angle-arm64-macos.zip 9eadd2055f66507e9d74655e7683e068e7e4a9dade5a84bc03d3f5affdfb7b9d "$angle-arm64-macos-release.zip"
     fetch angle-x86_64-macos.zip 4e11d10e01b4a5e06f24afbafc3302d7ee3135bd6b076d6f818b1c87a8b18b94 "$angle-x86_64-macos-release.zip"
     accesskit
-    if [[ ! -d "$deps/moltenvk/MoltenVK/MoltenVK.xcframework" ]]; then
-      unpack MoltenVK-all-1.4.1.tar.xz "$deps/moltenvk"
-      mv "$deps/moltenvk/MoltenVK/MoltenVK/include" "$deps/moltenvk/MoltenVK/"
-      mv "$deps/moltenvk/MoltenVK/MoltenVK/static/MoltenVK.xcframework" "$deps/moltenvk/MoltenVK/"
-    fi
     if [[ ! -f "$deps/angle/.from" ]]; then
       mkdir -p "$deps/angle"
       unzip -q -o "$deps/dl/angle-arm64-macos.zip" -d "$deps/angle"
@@ -238,6 +232,11 @@ if [[ "$asset" == *.zip ]]; then marker="$(unzip -p "$OUT/$asset" '*.wasm' | gre
 else marker="$(grep -aoE 'WR_NATIVE_DENY_LIST_SHA256=[0-9a-f]{64}' "$OUT/$asset" | head -1 || true)"; fi
 want="WR_NATIVE_DENY_LIST_SHA256=$(sha "$engine/native-deny-list.json")"
 [[ "$marker" == "$want" ]] || die "$asset does not carry $want (found '${marker:-nothing}')"
+# ANGLE is Compatibility's fallback where native OpenGL cannot start (D3D11 beneath it on Windows, Metal on macOS), and a
+# host asks for it (opengl3_angle): the RD drivers going must not take it with them. The message is ANGLE_ENABLED code's.
+case "$slice" in windows-*|macos)
+  grep -qa 'Could not initialize ANGLE OpenGL.' "$OUT/$asset" || die "$asset has no ANGLE (angle_libs did not take)" ;;
+esac
 digest="$(sha "$OUT/$asset")"
 echo "$digest  $asset" > "$OUT/$asset.sha256"
 echo "[godot-engine] $slice built in $(( $(date +%s) - start )) s: $OUT/$asset ($(wc -c < "$OUT/$asset" | tr -d ' ') bytes, sha256 $digest)"

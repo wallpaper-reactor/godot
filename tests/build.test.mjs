@@ -49,12 +49,14 @@ test('every slice is a production release template with the trim: its module swi
 test('the per-platform options: path overrides on where a host passes --main-pack, the official recipes elsewhere', () => {
 	assert.ok(options('linux').includes('disable_path_overrides=no'));
 	const mac = options('macos');
-	for (const want of ['platform=macos', 'disable_path_overrides=no', 'use_volk=no', 'ccflags=-mllvm -vectorize-slp=false']) assert.ok(mac.includes(want), want);
+	for (const want of ['platform=macos', 'disable_path_overrides=no', 'ccflags=-mllvm -vectorize-slp=false']) assert.ok(mac.includes(want), want);
+	assert.ok(mac.some((o) => o.startsWith('angle_libs=')), 'macOS: ANGLE is the Compatibility fallback');
 	const web = options('web');
 	assert.ok(web.includes('platform=web') && web.includes('threads=no'));
 	for (const arch of ['x86_64', 'arm64']) {
 		const win = options(`windows-${arch}`);
-		for (const want of ['platform=windows', `arch=${arch}`, 'use_mingw=yes', 'use_llvm=yes', 'd3d12=yes']) assert.ok(win.includes(want), `${arch} ${want}`);
+		for (const want of ['platform=windows', `arch=${arch}`, 'use_mingw=yes', 'use_llvm=yes']) assert.ok(win.includes(want), `${arch} ${want}`);
+		assert.ok(win.some((o) => o.startsWith('angle_libs=')), `${arch}: ANGLE is the Compatibility fallback`);
 		assert.ok(win.includes('linkflags=-Wl,--no-insert-timestamp'), 'no link time in the PE header: two builds give the same bytes');
 		assert.ok(!win.includes('disable_path_overrides=no'), 'Windows runs its pack beside it, as the official template');
 	}
@@ -81,7 +83,7 @@ test('an unknown slice prints the usage and builds nothing', () => {
 test('every download is pinned by SHA-256, and every toolchain by version', () => {
 	const text = readFileSync(script, 'utf8');
 	const fetches = [...text.matchAll(/^\s*fetch (\S+) (\S+) (\S+)/gm)];
-	assert.ok(fetches.length >= 10, `${fetches.length} fetches`);
+	assert.ok(fetches.length >= 8, `${fetches.length} fetches`);
 	for (const [, name, sha] of fetches) assert.match(sha, /^[0-9a-f]{64}$/, name);
 	for (const pin of [/^EMSCRIPTEN_VERSION=\d+\.\d+\.\d+\s/m, /^EMSDK_COMMIT=[0-9a-f]{40}\s/m, /^ANDROID_NDK_VERSION=\d+\.\d+\.\d+\s/m, /^XCODE_VERSION=\d+\.\d+\s/m]) {
 		assert.ok(pin.test(text), `${pin} is pinned`);
@@ -95,4 +97,17 @@ test('the desktop slices are optimised for size with full LTO (measured: no star
 		assert.ok(o.includes('optimize=size') && o.includes('lto=full'), name);
 		assert.ok(!o.includes('lto=none'), name);
 	}
+});
+
+test('no slice has a RenderingDevice driver: every wallpaper runs on Compatibility (OpenGL, or ANGLE beneath it)', () => {
+	for (const name of Object.keys(slices)) {
+		const o = options(name);
+		for (const want of ['vulkan=no', 'module_glslang_enabled=no']) assert.ok(o.includes(want), `${name} lacks ${want}`);
+		assert.ok(!o.some((x) => /^(vulkan_sdk_path|mesa_libs|use_volk)=/.test(x)), `${name}: an RD driver's input`);
+	}
+	for (const arch of ['x86_64', 'arm64']) assert.ok(options(`windows-${arch}`).includes('d3d12=no'), arch);
+	assert.ok(options('macos').includes('metal=no'));
+	const text = readFileSync(script, 'utf8');
+	assert.ok(!/moltenvk-osxcross|godot-nir-static/.test(text), 'no RD driver archive is fetched');
+	assert.match(text, /windows-\*\|macos\)\n\s*grep -qa 'Could not initialize ANGLE OpenGL\.'/, 'a Windows or macOS output without ANGLE is refused');
 });
