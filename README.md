@@ -1,4 +1,4 @@
-# godot-engine-builds
+# godot
 
 Builds of the [Godot Engine](https://godotengine.org) used by
 [Wallpaper Reactor](https://wallpaperreactor.app) to render Godot wallpapers.
@@ -13,7 +13,7 @@ running it.
 
 | Release | Asset | Platform |
 | --- | --- | --- |
-| [`godot-engine-4.7.2-wr3`](https://github.com/wallpaper-reactor/godot-engine-builds/releases/tag/godot-engine-4.7.2-wr3) | `godot_linux_release_wr.x86_64` | Linux x86_64, glibc 2.38 or later |
+| [`godot-engine-4.7.2-wr3`](https://github.com/wallpaper-reactor/godot/releases/tag/godot-engine-4.7.2-wr3) | `godot_linux_release_wr.x86_64` | Linux x86_64, glibc 2.38 or later |
 
 Each binary has a `.sha256` beside it. Windows and macOS builds ship inside the Wallpaper
 Reactor app itself and are not published here.
