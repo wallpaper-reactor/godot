@@ -120,6 +120,16 @@ unpack() {
   echo "$archive" > "$dir/.from"
 }
 
+# The source and SCons, before a toolchain puts its own python3 on PATH (the Linux SDK's has no ssl module).
+if [[ ! -d "$SRC/.git" ]]; then
+  git clone -q --depth 1 --branch "$GODOT_TAG" https://github.com/godotengine/godot.git "$SRC"
+fi
+"$engine/scripts/prepare.sh" "$SRC" ${patches[@]+"${patches[@]}"}
+if [[ ! -x "$cache/venv/bin/scons" ]] || ! "$cache/venv/bin/scons" --version | grep -q "v$SCONS_VERSION"; then
+  python3 -m venv "$cache/venv"
+  "$cache/venv/bin/pip" install --quiet "SCons==$SCONS_VERSION"
+fi
+
 # The toolchain and libraries of the slice.
 angle=https://github.com/godotengine/godot-angle-static/releases/download/chromium%2F7578/godot-angle-static
 accesskit() {
@@ -199,16 +209,6 @@ case "$slice" in
       "$sdkmanager" --install "ndk;$ANDROID_NDK_VERSION" >/dev/null
     fi ;;
 esac
-
-# The source and SCons.
-if [[ ! -d "$SRC/.git" ]]; then
-  git clone -q --depth 1 --branch "$GODOT_TAG" https://github.com/godotengine/godot.git "$SRC"
-fi
-"$engine/scripts/prepare.sh" "$SRC" ${patches[@]+"${patches[@]}"}
-if [[ ! -x "$cache/venv/bin/scons" ]] || ! "$cache/venv/bin/scons" --version | grep -q "v$SCONS_VERSION"; then
-  python3 -m venv "$cache/venv"
-  "$cache/venv/bin/pip" install --quiet "SCons==$SCONS_VERSION"
-fi
 
 start=$(date +%s)
 mkdir -p "$OUT"
