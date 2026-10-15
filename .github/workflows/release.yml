@@ -1,0 +1,72 @@
+name: Release
+
+# Publishes the artifacts of one successful Build run, byte for byte, as a release: every slice, a .sha256 each, one
+# SHA256SUMS, and Godot's LICENSE.txt and COPYRIGHT.txt from the pinned commit. Nothing is rebuilt, so the binaries
+# that were checked are the ones published, and each one's attestation from that run still verifies.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: The Build run whose artifacts to publish
+        required: true
+      tag:
+        description: The release tag, godot-engine-<godot version>-wr<n>
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ inputs.run_id }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: The run is a successful Build of this repository's main
+        id: run
+        run: |
+          [[ "$TAG" =~ ^godot-engine-[0-9]+\.[0-9]+(\.[0-9]+)?-wr[0-9]+$ ]] || { echo "bad tag $TAG"; exit 1; }
+          ! gh release view "$TAG" >/dev/null 2>&1 || { echo "$TAG exists; releases are never replaced"; exit 1; }
+          read -r name conclusion branch sha < <(gh run view "$RUN_ID" --json workflowName,conclusion,headBranch,headSha \
+            --jq '[.workflowName, .conclusion, .headBranch, .headSha] | @tsv')
+          [[ "$name" == Build && "$conclusion" == success && "$branch" == main ]] \
+            || { echo "run $RUN_ID is '$name' on '$branch', $conclusion"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Download and verify
+        run: |
+          mkdir -p "$RUNNER_TEMP/dl" "$RUNNER_TEMP/release"
+          gh run download "$RUN_ID" --dir "$RUNNER_TEMP/dl"
+          for asset in $(python3 -c 'import json; print(" ".join(s["asset"] for s in json.load(open("slices.json"))["slices"].values()))'); do
+            f="$(find "$RUNNER_TEMP/dl" -name "$asset" -type f)"
+            [[ -n "$f" ]] || { echo "missing $asset"; exit 1; }
+            (cd "$(dirname "$f")" && sha256sum -c "$asset.sha256")
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY"
+            cp "$f" "$f.sha256" "$RUNNER_TEMP/release/"
+          done
+          source godot.env
+          for f in LICENSE.txt COPYRIGHT.txt; do
+            curl -fsSL -o "$RUNNER_TEMP/release/$f" "https://raw.githubusercontent.com/godotengine/godot/$GODOT_COMMIT/$f"
+          done
+          (cd "$RUNNER_TEMP/release" && sha256sum $(ls | grep -v '\.sha256$') > SHA256SUMS && cat SHA256SUMS)
+
+      - name: Publish
+        env:
+          SHA: ${{ steps.run.outputs.sha }}
+        run: |
+          source godot.env
+          {
+            echo "Godot $GODOT_TAG (\`${GODOT_COMMIT:0:8}\`) export templates with this repository's hardening, built from \`${SHA:0:8}\` by [Build run $RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$RUN_ID)."
+            echo
+            echo "Each binary has a build-provenance attestation: \`gh attestation verify <file> --repo $GITHUB_REPOSITORY\`. The macOS build is unsigned."
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/release/SHA256SUMS"
+            echo '```'
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --target "$SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "$RUNNER_TEMP"/release/*

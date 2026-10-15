@@ -1,0 +1,17 @@
+{
+	"disabled_classes": [
+		"HTTPClient",
+		"HTTPRequest",
+		"StreamPeerTCP",
+		"TCPServer",
+		"PacketPeerUDP",
+		"UDPServer",
+		"PacketPeerDTLS",
+		"DTLSServer",
+		"StreamPeerTLS",
+		"X509Certificate",
+		"TLSOptions",
+		"Expression"
+	],
+	"type": "build_profile"
+}

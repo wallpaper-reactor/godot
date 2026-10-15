@@ -1,0 +1,54 @@
+{
+  "_comment": "The methods the hardened engine never binds: the one copy. Every ClassName::method below is never registered in ClassDB on a hardened template (patches/harden.patch, the bind-path hook), so no script, Callable, Object.call or ClassDB lookup can reach it. scripts/deny-header.py generates the C++ header the hook includes from this file at build time; check/check.gd proves a built engine has none of them. Whole classes go in the build profile's disabled_classes instead (profile/trim.gdbuild). Adding or dropping a method is an edit here, not to the patch.",
+  "methods": {
+    "OS": [
+      "execute",
+      "execute_with_pipe",
+      "create_process",
+      "create_instance",
+      "open_with_program",
+      "kill",
+      "shell_open",
+      "shell_show_in_file_manager",
+      "move_to_trash",
+      "set_restart_on_exit",
+      "set_environment",
+      "get_environment",
+      "unset_environment",
+      "has_environment",
+      "get_name",
+      "get_distribution_name",
+      "get_model_name",
+      "get_unique_id",
+      "get_executable_path",
+      "get_user_data_dir",
+      "get_data_dir",
+      "get_config_dir",
+      "get_cache_dir",
+      "get_system_dir",
+      "get_temp_dir"
+    ],
+    "ProjectSettings": ["globalize_path", "load_resource_pack", "save_custom"],
+    "DirAccess": ["create_link"],
+    "DisplayServer": [
+      "clipboard_get",
+      "clipboard_set",
+      "clipboard_get_image",
+      "clipboard_has",
+      "clipboard_has_image",
+      "clipboard_get_primary",
+      "clipboard_set_primary",
+      "screen_get_image",
+      "screen_get_image_rect",
+      "screen_get_pixel"
+    ],
+    "GDExtensionManager": ["load_extension", "load_extension_from_function"],
+    "IP": [
+      "resolve_hostname",
+      "resolve_hostname_addresses",
+      "resolve_hostname_queue_item",
+      "get_local_addresses",
+      "get_local_interfaces"
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+The one change to Godot's macOS platform, applied by scripts/prepare.sh to the macos slice. Without
+WR_GODOT_ACCESSORY in the environment the engine is stock.
+
+A host starts every wallpaper engine with WR_GODOT_ACCESSORY=1. Stock Godot makes itself a regular app in main(),
+before any pack, autoload or extension loads, and when its window is first shown activates itself and runs the
+"unbundled window activation hack" (TransformProcessType to foreground): two Dock icons, for about half a second, at
+each start. With the variable it starts as an accessory app and never activates itself: no Dock tile, no focus
+taken. Activation is skipped whole, not just the hack: an accessory engine that activated itself stayed the active
+app and took the focus.
+
+diff --git a/platform/macos/godot_application.mm b/platform/macos/godot_application.mm
+index 9d30313..4c50a40 100644
+--- a/platform/macos/godot_application.mm
++++ b/platform/macos/godot_application.mm
+@@ -57,6 +57,9 @@ - (GodotApplicationDelegate *)godotDelegate {
+ }
+ 
+ - (void)activateApplication {
++	if (getenv("WR_GODOT_ACCESSORY")) {
++		return; // Wallpaper Reactor: a wallpaper never takes focus, or the Dock through the hack below.
++	}
+ 	[NSApp activateIgnoringOtherApps:YES];
+ 	NSString *nsappname = [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleName"];
+ 	const char *bundled_id = getenv("__CFBundleIdentifier");
+diff --git a/platform/macos/os_macos.mm b/platform/macos/os_macos.mm
+index 620666c..3579e3f 100644
+--- a/platform/macos/os_macos.mm
++++ b/platform/macos/os_macos.mm
+@@ -1202,7 +1202,8 @@ static void handle_interrupt(int sig) {
+ 	[GodotApplication sharedApplication];
+ 
+ 	// In case we are unbundled, make us a proper UI application.
+-	[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
++	// Wallpaper Reactor: an engine started with WR_GODOT_ACCESSORY is a wallpaper and never gets a Dock icon.
++	[NSApp setActivationPolicy:getenv("WR_GODOT_ACCESSORY") ? NSApplicationActivationPolicyAccessory : NSApplicationActivationPolicyRegular];
+ 
+ 	// Menu bar setup must go between sharedApplication above and
+ 	// finishLaunching below, in order to properly emulate the behavior

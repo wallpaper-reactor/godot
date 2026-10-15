@@ -1,0 +1,283 @@
+The hardening of Godot's release templates for running untrusted wallpapers. Applied by scripts/prepare.sh to every
+slice; README.md lists each hunk, its purpose and why no build option can replace it. Every hunk is
+#ifndef TOOLS_ENABLED: the editor that exports packs is stock. Four concerns, nothing else:
+
+1. The deny-list hook (core/object/class_db.{h,cpp}): a ClassName::method named in native-deny-list.json is never
+   registered, on every bind path; and the build profile's disabled_classes holds for register_custom_instance_class.
+2. Path confinement (core/io/file_access.{h,cpp}, dir_access.cpp, file_access_pack.cpp, main/main.cpp): from
+   Main::setup2 on, every path a FileAccess or DirAccess resolves must lie in user:// or the project directory.
+3. No bytes decode into an object once a pack can run (core/io/marshalls.cpp).
+4. The extension list is read past the pack (core/extension/gdextension_manager.cpp).
+
+diff --git a/core/extension/gdextension_manager.cpp b/core/extension/gdextension_manager.cpp
+index 86aacfd..88e1021 100644
+--- a/core/extension/gdextension_manager.cpp
++++ b/core/extension/gdextension_manager.cpp
+@@ -325,7 +325,13 @@ void GDExtensionManager::load_extensions() {
+ 		return;
+ 	}
+ 
++#ifdef TOOLS_ENABLED
+ 	Ref<FileAccess> f = FileAccess::open(GDExtension::get_extension_list_config_file(), FileAccess::READ);
++#else
++	// Wallpaper Reactor (harden.patch): the extension list is the host's (the macOS host writes one in the engine's
++	// working directory), never one a pack ships: that would load native code a pack names.
++	Ref<FileAccess> f = FileAccess::open(GDExtension::get_extension_list_config_file(), FileAccess::READ | FileAccess::SKIP_PACK);
++#endif // TOOLS_ENABLED
+ 	while (f.is_valid() && !f->eof_reached()) {
+ 		String s = f->get_line().strip_edges();
+ 		if (!s.is_empty()) {
+diff --git a/core/io/dir_access.cpp b/core/io/dir_access.cpp
+index 7a9a4b7..b58de6a 100644
+--- a/core/io/dir_access.cpp
++++ b/core/io/dir_access.cpp
+@@ -188,6 +188,15 @@ DirAccess::AccessType DirAccess::get_access_type() const {
+ }
+ 
+ String DirAccess::fix_path(const String &p_path) const {
++#ifndef TOOLS_ENABLED
++	if (FileAccess::wr_confined && FileAccess::wr_trusted == 0) { // Wallpaper Reactor: FileAccess::wr_confine.
++		FileAccess::WrTrusted resolving;
++		// A relative name is relative to this DirAccess's current directory, as stock resolves it, and confined as
++		// that. Refusing it outright broke the GLES3 shader cache, which walks user://shader_cache by name.
++		const String path = p_path.is_relative_path() ? get_current_dir().path_join(p_path) : p_path;
++		return FileAccess::wr_confine(DirAccess::fix_path(path), _access_type == ACCESS_RESOURCES);
++	}
++#endif // TOOLS_ENABLED
+ 	switch (_access_type) {
+ 		case ACCESS_RESOURCES: {
+ 			if (ProjectSettings::get_singleton()) {
+diff --git a/core/io/file_access.cpp b/core/io/file_access.cpp
+index 9bd1b45..6ff5658 100644
+--- a/core/io/file_access.cpp
++++ b/core/io/file_access.cpp
+@@ -71,7 +71,11 @@ Ref<FileAccess> FileAccess::create_for_path(const String &p_path) {
+ 		ret = create(ACCESS_RESOURCES);
+ 	} else if (p_path.begins_with("user://")) {
+ 		ret = create(ACCESS_USERDATA);
+-	} else if (p_path.begins_with("pipe://")) {
++	} else if (p_path.begins_with("pipe://")
++#ifndef TOOLS_ENABLED
++			&& !wr_confined // Wallpaper Reactor: a confined pipe:// is a filesystem path, and refused as one.
++#endif // TOOLS_ENABLED
++	) {
+ 		ret = create(ACCESS_PIPE);
+ 	} else {
+ 		ret = create(ACCESS_FILESYSTEM);
+@@ -251,8 +255,47 @@ FileAccess::AccessType FileAccess::get_access_type() const {
+ 	return _access_type;
+ }
+ 
++#ifndef TOOLS_ENABLED
++void FileAccess::wr_confine_begin() {
++	const String resources = ProjectSettings::get_singleton()->get_resource_path();
++	wr_roots[0] = OS::get_singleton()->get_user_data_dir().replace_char('\\', '/').trim_suffix("/");
++	wr_roots[1] = ProjectSettings::get_singleton()->is_using_datapack() ? String() : resources.replace_char('\\', '/').trim_suffix("/");
++	// Android and the web serve res:// with no project directory: a relative path there is in the APK or the page.
++	// Anywhere else an empty resource path (--main-pack) resolves a relative res:// against the working directory,
++	// where a host keeps its slot: the pack's stored copy, override.cfg, user.pack. So res:// is the pack alone there.
++#if defined(ANDROID_ENABLED) || defined(WEB_ENABLED)
++	wr_relative_resources = resources.is_empty();
++#else
++	wr_relative_resources = false;
++#endif
++	wr_confined = true;
++}
++
++String FileAccess::wr_confine(const String &p_os_path, bool p_resources) {
++	const String path = p_os_path.replace_char('\\', '/');
++	if (!path.split("/").has("..")) {
++		for (const String &root : wr_roots) {
++			if (!root.is_empty() && (path == root || path.begins_with(root + "/"))) {
++				return p_os_path;
++			}
++		}
++		if (p_resources && wr_relative_resources && path.is_relative_path() && !path.contains("://")) {
++			return p_os_path;
++		}
++	}
++	print_verbose(vformat("Wallpaper Reactor: '%s' is outside res:// and user://.", p_os_path));
++	return "/" + String("wr-confined-").repeat(24); // One 288-character name: no filesystem opens or creates it.
++}
++#endif // TOOLS_ENABLED
++
+ String FileAccess::fix_path(const String &p_path) const {
+ 	// Helper used by file accesses that use a single filesystem.
++#ifndef TOOLS_ENABLED
++	if (wr_confined && wr_trusted == 0) {
++		WrTrusted resolving; // Resolve as stock Godot does, then confine what that resolved to.
++		return wr_confine(FileAccess::fix_path(p_path), _access_type == ACCESS_RESOURCES);
++	}
++#endif // TOOLS_ENABLED
+ 
+ 	String r_path = p_path.replace_char('\\', '/');
+ 
+diff --git a/core/io/file_access.h b/core/io/file_access.h
+index 62bfa22..14d06c6 100644
+--- a/core/io/file_access.h
++++ b/core/io/file_access.h
+@@ -89,6 +89,23 @@ public:
+ 
+ 	typedef Ref<FileAccess> (*CreateFunc)();
+ 	bool big_endian = false;
++
++#ifndef TOOLS_ENABLED
++	// Wallpaper Reactor (patches/harden.patch): from Main::setup2 on, before any script can run, every
++	// path a FileAccess or DirAccess resolves must lie in user:// or, with no pack mounted, the project directory;
++	// anything else, '..' included, resolves to a name no filesystem accepts. A pack mounted with --main-pack is
++	// reached only through res://. The engine's own read of a mounted pack is exempt (WrTrusted).
++	struct WrTrusted {
++		WrTrusted() { wr_trusted++; }
++		~WrTrusted() { wr_trusted--; }
++	};
++	static void wr_confine_begin();
++	static String wr_confine(const String &p_os_path, bool p_resources);
++	static inline thread_local int wr_trusted = 0;
++	static inline bool wr_confined = false;
++	static inline bool wr_relative_resources = false;
++	static inline String wr_roots[2];
++#endif // TOOLS_ENABLED
+ 	bool real_is_double = false;
+ 
+ 	virtual BitField<UnixPermissionFlags> _get_unix_permissions(const String &p_file) = 0;
+diff --git a/core/io/file_access_pack.cpp b/core/io/file_access_pack.cpp
+index cc4bef2..38acdb4 100644
+--- a/core/io/file_access_pack.cpp
++++ b/core/io/file_access_pack.cpp
+@@ -546,6 +546,9 @@ FileAccessPack::FileAccessPack(const String &p_path, const PackedData::PackedFil
+ 		off = 0; // For the sparse pack offset is always zero.
+ 	} else {
+ 		Error err = OK;
++#ifndef TOOLS_ENABLED
++		FileAccess::WrTrusted pack; // Wallpaper Reactor: the engine reading a pack it mounted, wherever it lies.
++#endif // TOOLS_ENABLED
+ 		f = FileAccess::open(pf.pack, FileAccess::READ, &err);
+ 		ERR_FAIL_COND_MSG(err != OK, vformat(R"(Can't open pack-referenced file "%s" from pack "%s" due to error "%s".)", p_path, pf.pack, error_names[err]));
+ 		f->seek(pf.offset);
+diff --git a/core/io/marshalls.cpp b/core/io/marshalls.cpp
+index 4579fb9..173e211 100644
+--- a/core/io/marshalls.cpp
++++ b/core/io/marshalls.cpp
+@@ -30,6 +30,7 @@
+ 
+ #include "marshalls.h"
+ 
++#include "core/io/file_access.h"
+ #include "core/io/resource_loader.h"
+ #include "core/object/class_db.h"
+ #include "core/object/ref_counted.h"
+@@ -184,6 +185,14 @@ static Error _decode_container_type(const uint8_t *&buf, int &len, int *r_len, b
+ }
+ 
+ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int *r_len, bool p_allow_objects, int p_depth) {
++#ifndef TOOLS_ENABLED
++	if (FileAccess::wr_confined) {
++		// Wallpaper Reactor (harden.patch): once a pack can run (Main::setup2 on), no bytes decode into an object, whatever
++		// the caller asks: FileAccess and StreamPeer get_var, bytes_to_var_with_objects, decode_var, base64_to_variant.
++		// The engine's own project.binary, which holds input events, is read before that.
++		p_allow_objects = false;
++	}
++#endif // TOOLS_ENABLED
+ 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_OUT_OF_MEMORY, "Variant is too deep. Bailing.");
+ 	const uint8_t *buf = p_buffer;
+ 	int len = p_len;
+diff --git a/core/object/class_db.cpp b/core/object/class_db.cpp
+index 855ced0..1e7bd67 100644
+--- a/core/object/class_db.cpp
++++ b/core/object/class_db.cpp
+@@ -38,6 +38,23 @@
+ 
+ #define ERR_FAIL_NO_CLASS(m_type, m_class) ERR_FAIL_NULL_MSG(m_type, vformat("Cannot get class \"%s\".", m_class))
+ 
++#ifndef TOOLS_ENABLED
++// Wallpaper Reactor (patches/harden.patch): a method named in native-deny-list.json is never
++// registered, so no script, Callable, Object.call or ClassDB lookup can reach it. The list is data, generated into
++// this header at build time; every bind path below (instance, static, vararg, custom) asks here first.
++#include "core/object/wr_native_deny_list.gen.h"
++
++static bool _wr_denied(const StringName &p_class, const StringName &p_method) {
++	for (const char *const *entry : WR_NATIVE_DENY_LIST) {
++		if (p_class == entry[0] && p_method == entry[1]) {
++			print_verbose(vformat("%s: %s::%s not bound", WR_NATIVE_DENY_LIST_ID, p_class, p_method));
++			return true;
++		}
++	}
++	return false;
++}
++#endif // TOOLS_ENABLED
++
+ #ifdef DEBUG_ENABLED
+ 
+ MethodDefinition D_METHODP(const char *p_name, const char *const **p_args, uint32_t p_argcount) {
+@@ -1839,6 +1856,12 @@ void ClassDB::_bind_method_custom(const StringName &p_class, MethodBind *p_metho
+ 		memdelete(p_method);
+ 		ERR_FAIL_MSG(vformat("Couldn't bind custom method '%s' for instance '%s'.", method_name, p_class));
+ 	}
++#ifndef TOOLS_ENABLED
++	if (_wr_denied(p_class, method_name)) {
++		memdelete(p_method);
++		return;
++	}
++#endif // TOOLS_ENABLED
+ 
+ 	if (p_compatibility) {
+ 		_bind_compatibility(type, p_method);
+@@ -1870,6 +1893,12 @@ MethodBind *ClassDB::_bind_vararg_method(MethodBind *p_bind, const StringName &p
+ 		memdelete(bind);
+ 		ERR_FAIL_NULL_V(type, nullptr);
+ 	}
++#ifndef TOOLS_ENABLED
++	if (_wr_denied(instance_type, p_name)) {
++		memdelete(bind);
++		return nullptr;
++	}
++#endif // TOOLS_ENABLED
+ 
+ 	if (p_compatibility) {
+ 		_bind_compatibility(type, bind);
+@@ -1905,6 +1934,13 @@ MethodBind *ClassDB::bind_methodfi(uint32_t p_flags, MethodBind *p_bind, bool p_
+ 
+ 	String instance_type = p_bind->get_instance_class();
+ 
++#ifndef TOOLS_ENABLED
++	if (_wr_denied(instance_type, mdname)) {
++		memdelete(p_bind);
++		return nullptr;
++	}
++#endif // TOOLS_ENABLED
++
+ #ifdef DEBUG_ENABLED
+ 
+ 	ERR_FAIL_COND_V_MSG(!p_compatibility && has_method(instance_type, mdname), nullptr, vformat("Class '%s' already has a method '%s'.", String(instance_type), String(mdname)));
+diff --git a/core/object/class_db.h b/core/object/class_db.h
+index d038e6b..2330ff0 100644
+--- a/core/object/class_db.h
++++ b/core/object/class_db.h
+@@ -311,6 +311,13 @@ public:
+ 
+ 	template <typename T>
+ 	static void register_custom_instance_class() {
++#ifndef TOOLS_ENABLED
++		// Wallpaper Reactor (harden.patch): the build profile's disabled_classes holds here too. Stock registers
++		// these anyway, which left HTTPClient (raw sockets through HTTPClientTCP) scriptable in a trimmed build.
++		if constexpr (!GD_IS_CLASS_ENABLED(T)) {
++			return;
++		}
++#endif // TOOLS_ENABLED
+ 		Locker::Lock lock(Locker::STATE_WRITE);
+ 		static_assert(std::is_same_v<typename T::self_type, T>, "Class not declared properly, please use GDCLASS.");
+ 		T::initialize_class();
+diff --git a/main/main.cpp b/main/main.cpp
+index 2fc62fd..fbaa7db 100644
+--- a/main/main.cpp
++++ b/main/main.cpp
+@@ -3032,6 +3032,9 @@ Error _parse_resource_dummy(void *p_data, VariantParser::Stream *p_stream, Ref<R
+ 
+ Error Main::setup2(bool p_show_boot_logo) {
+ 	GodotProfileZone("setup2");
++#ifndef TOOLS_ENABLED
++	FileAccess::wr_confine_begin(); // Wallpaper Reactor (harden.patch): paths confined before any script can run.
++#endif // TOOLS_ENABLED
+ 	OS::get_singleton()->benchmark_begin_measure("Startup", "Main::Setup2");
+ 
+ 	Thread::make_main_thread(); // Make whatever thread call this the main thread.

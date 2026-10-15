@@ -1,0 +1,14 @@
+{
+	"_comment": "Every slice scripts/build.sh builds, the release asset it publishes as, and the runner CI builds it on. The one table: the build, the CI matrix and the release read it.",
+	"slices": {
+		"linux": { "asset": "godot_linux_release_wr.x86_64", "runner": "ubuntu-24.04" },
+		"web": { "asset": "godot_web_nothreads_release_wr.zip", "runner": "ubuntu-24.04" },
+		"windows-x86_64": { "asset": "godot_windows_release_wr.x86_64.exe", "runner": "ubuntu-24.04" },
+		"windows-arm64": { "asset": "godot_windows_release_wr.arm64.exe", "runner": "ubuntu-24.04" },
+		"macos": { "asset": "godot_macos_release_wr.universal", "runner": "macos-26" },
+		"android-arm64": { "asset": "libgodot_android.arm64-v8a.so", "runner": "ubuntu-24.04" },
+		"android-arm32": { "asset": "libgodot_android.armeabi-v7a.so", "runner": "ubuntu-24.04" },
+		"android-x86_64": { "asset": "libgodot_android.x86_64.so", "runner": "ubuntu-24.04" },
+		"android-x86_32": { "asset": "libgodot_android.x86.so", "runner": "ubuntu-24.04" }
+	}
+}
