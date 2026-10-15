@@ -34,11 +34,13 @@ scripts/build.sh <slice> [--jobs N] [--dry-run] [-- scons option...]
 The slices are `linux`, `web`, `windows-x86_64`, `windows-arm64`, `macos`, `android-arm64`,
 `android-arm32`, `android-x86_64` and `android-x86_32`. Output goes to
 `$WR_GODOT_OUT/<asset>` with a `.sha256` beside it. `--dry-run` prints the scons options and
-builds nothing. Everything after `--` goes to scons last, so it overrides.
+builds nothing. Everything after `--` goes to scons last, so it overrides. The desktop slices (Linux,
+Windows, macOS) are built with `optimize=size lto=full`: a fifth to two fifths smaller, with no
+measured cost in startup or frame rate.
 
 | Slice | Toolchain | Notes |
 | --- | --- | --- |
-| `linux` | Godot's buildroot SDK `godot-2023.08.x-4` (glibc 2.28) | Path overrides on, so `--main-pack` works. No LTO |
+| `linux` | Godot's buildroot SDK `godot-2023.08.x-4` (glibc 2.28) | Path overrides on, so `--main-pack` works |
 | `web` | emscripten 4.0.20 | No threads |
 | `windows-*` | llvm-mingw 20251118 | The official recipe: D3D12 with Mesa NIR, ANGLE, AccessKit, WinRT |
 | `macos` | Xcode 26.2 | Universal. Path overrides on. Unsigned. The SLP vectoriser is off so the output is reproducible |

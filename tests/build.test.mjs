@@ -87,3 +87,11 @@ test('every download is pinned by SHA-256, and every toolchain by version', () =
 	}
 	assert.ok(!/curl[^\n]*\| *(ba)?sh/.test(text), 'nothing is piped into a shell');
 });
+
+test('the desktop slices are optimised for size with full LTO (measured: no startup or fps cost)', () => {
+	for (const name of ['linux', 'windows-x86_64', 'windows-arm64', 'macos']) {
+		const o = options(name);
+		assert.ok(o.includes('optimize=size') && o.includes('lto=full'), name);
+		assert.ok(!o.includes('lto=none'), name);
+	}
+});

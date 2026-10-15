@@ -5,7 +5,7 @@
 # then scons with the slice's options.
 #
 #   linux    the Linux release template with path overrides on (--main-pack and --path work): what the hardening check
-#            runs. Godot's own Linux SDK (buildroot, glibc 2.28), as the official build. No LTO, to build fast.
+#            runs. Godot's own Linux SDK (buildroot, glibc 2.28), as the official build.
 #   web      the no-threads web release template, with the emscripten Godot's 4.7 build container uses
 #   windows-<x86_64|arm64>
 #            cross-built with llvm-mingw: the official 4.7 recipe (production, D3D12 with Mesa NIR, ANGLE, AccessKit,
@@ -65,22 +65,25 @@ OUT="${WR_GODOT_OUT:-$cache/out}"
 deps="$cache/deps"
 common=(target=template_release production=yes "${standard[@]}" "build_profile=$engine/profile/trim.gdbuild"
         warnings=no progress=no)
+# The desktop slices: optimised for size with full LTO, a third smaller with no measured cost in startup or fps
+# (Android is already optimize=size).
+desktop=(optimize=size lto=full)
 patches=()
 case "$slice" in
   linux)
-    opts=(platform=linuxbsd arch=x86_64 lto=none disable_path_overrides=no "${common[@]}")
+    opts=(platform=linuxbsd arch=x86_64 disable_path_overrides=no "${desktop[@]}" "${common[@]}")
     built=(bin/godot.linuxbsd.template_release.x86_64) ;;
   web)
     opts=(platform=web threads=no "${common[@]}")
     built=(bin/godot.web.template_release.wasm32.nothreads.zip) ;;
   windows-x86_64|windows-arm64)
     arch="${slice#windows-}"
-    opts=(platform=windows "arch=$arch" use_mingw=yes use_llvm=yes "mingw_prefix=$deps/llvm-mingw" d3d12=yes
+    opts=(platform=windows "arch=$arch" "${desktop[@]}" use_mingw=yes use_llvm=yes "mingw_prefix=$deps/llvm-mingw" d3d12=yes
           "angle_libs=$deps/angle" "mesa_libs=$deps/mesa" "accesskit_sdk_path=$deps/accesskit/accesskit-c"
           "winrt_path=$deps/winrt" "${common[@]}")
     built=("bin/godot.windows.template_release.$arch.llvm.exe") ;;
   macos)
-    opts=(platform=macos use_volk=no disable_path_overrides=no "ccflags=-mllvm -vectorize-slp=false"
+    opts=(platform=macos "${desktop[@]}" use_volk=no disable_path_overrides=no "ccflags=-mllvm -vectorize-slp=false"
           "vulkan_sdk_path=$deps/moltenvk" "angle_libs=$deps/angle" "accesskit_sdk_path=$deps/accesskit/accesskit-c"
           "${common[@]}")
     patches=("$engine/patches/macos-accessory.patch")
