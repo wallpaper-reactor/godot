@@ -11,7 +11,7 @@ on:
         description: The Build run whose artifacts to publish
         required: true
       tag:
-        description: The release tag, godot-engine-<godot version>-wr<n>
+        description: The release tag, godot-engine-<godot version>-wr<n>, already pushed on the run's commit
         required: true
 
 permissions:
@@ -37,6 +37,9 @@ jobs:
           # A push run builds exactly what main holds; a dispatched one may carry extra options.
           [[ "$name" == Build && "$conclusion" == success && "$branch" == main && "$event" == push ]] \
             || { echo "run $RUN_ID is '$name' ($event) on '$branch', $conclusion"; exit 1; }
+          # The tag is pushed by hand: this token may not create a ref on a commit that changes workflow files.
+          tagged="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha 2>/dev/null || true)"
+          [[ "$tagged" == "$sha" ]] || { echo "push tag $TAG on $sha first (it is on '${tagged:-nothing}')"; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Download and verify
@@ -70,4 +73,4 @@ jobs:
             cat "$RUNNER_TEMP/release/SHA256SUMS"
             echo '```'
           } > "$RUNNER_TEMP/notes.md"
-          gh release create "$TAG" --target "$SHA" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "$RUNNER_TEMP"/release/*
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "$RUNNER_TEMP"/release/*

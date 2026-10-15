@@ -85,7 +85,8 @@ The core networking classes and `Expression` are listed in `profile/trim.gdbuild
    and keep this README's table in step (`tests/patches.test.mjs` checks it).
 3. Check the toolchain pins in `scripts/build.sh` against the new version's official build
    containers (emscripten, NDK, llvm-mingw, Xcode, and the library archives).
-4. Push. CI builds every slice and runs the hardening check on Linux and macOS.
+4. Push. CI builds every slice and runs the hardening check on Linux and macOS. To release a run: push the tag
+   `godot-engine-<version>-wr<n>` on its commit, then run the `Release` workflow with the run id and the tag.
 5. If a new engine method opens a new capability, add it to `native-deny-list.json`.
 
 ## Releases

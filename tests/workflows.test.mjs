@@ -41,6 +41,8 @@ test('a release publishes one successful Build run of main, verified, and never 
 	assert.match(release, /sha256sum -c "\$asset\.sha256"/);
 	assert.match(release, /gh attestation verify "\$f" --repo "\$GITHUB_REPOSITORY"/);
 	assert.match(release, /releases are never replaced/);
+	assert.match(release, /gh release create "\$TAG" --verify-tag/, 'the tag is pushed by hand on the run\'s commit');
+	assert.match(release, /\[\[ "\$tagged" == "\$sha" \]\]/);
 	assert.doesNotMatch(release, /--clobber|gh release (delete|edit|upload)/);
 });
 
