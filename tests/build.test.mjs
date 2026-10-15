@@ -59,7 +59,7 @@ test('the per-platform options: path overrides on where a host passes --main-pac
 	}
 	for (const arch of ['arm64', 'arm32', 'x86_64', 'x86_32']) {
 		const a = options(`android-${arch}`);
-		for (const want of ['platform=android', `arch=${arch}`, 'swappy=no']) assert.ok(a.includes(want), `${arch} ${want}`);
+		for (const want of ['platform=android', `arch=${arch}`, 'swappy=no', 'optimize=size']) assert.ok(a.includes(want), `${arch} ${want}`);
 	}
 });
 

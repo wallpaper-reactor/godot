@@ -14,7 +14,7 @@
 #   macos    universal (x86_64 and arm64 joined with lipo), path overrides on, the official 4.7 recipe (MoltenVK, ANGLE,
 #            AccessKit) on Xcode XCODE_VERSION, the SLP vectoriser off (below). Unsigned: whoever ships it signs it.
 #   android-<arm64|arm32|x86_64|x86_32>
-#            libgodot_android.so for one ABI, with the NDK this Godot pins; swappy off (Vulkan frame pacing).
+#            libgodot_android.so for one ABI, with the NDK this Godot pins; optimize=size; swappy off (Vulkan frame pacing).
 #
 # Every input is pinned: the source commit (godot.env), SCons, each downloaded archive by SHA-256, each toolchain by
 # version. The SLP vectoriser is off on macOS because it is not deterministic in Xcode's clang (the same command gave
@@ -88,7 +88,7 @@ case "$slice" in
   android-*)
     arch="${slice#android-}"
     declare -A abi=([arm64]=arm64-v8a [arm32]=armeabi-v7a [x86_64]=x86_64 [x86_32]=x86)
-    opts=(platform=android "arch=$arch" swappy=no "${common[@]}")
+    opts=(platform=android "arch=$arch" optimize=size swappy=no "${common[@]}")
     built=("platform/android/java/lib/libs/release/${abi[$arch]}/libgodot_android.so") ;;
 esac
 opts+=(${extra[@]+"${extra[@]}"})

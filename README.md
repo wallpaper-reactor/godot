@@ -42,7 +42,7 @@ builds nothing. Everything after `--` goes to scons last, so it overrides.
 | `web` | emscripten 4.0.20 | No threads |
 | `windows-*` | llvm-mingw 20251118 | The official recipe: D3D12 with Mesa NIR, ANGLE, AccessKit, WinRT |
 | `macos` | Xcode 26.2 | Universal. Path overrides on. Unsigned. The SLP vectoriser is off so the output is reproducible |
-| `android-*` | NDK 29.0.14206865 | `libgodot_android.so` for one ABI. Swappy off |
+| `android-*` | NDK 29.0.14206865 | `libgodot_android.so` for one ABI. Optimised for size. Swappy off |
 
 To check a Linux or macOS build:
 
