@@ -188,7 +188,9 @@ case "$slice" in
     export MINGW_PREFIX="$deps/llvm-mingw" ;;   # the platform is offered only when this names a mingw (detect.py can_build)
   macos)
     [[ "$(uname -s)" == Darwin ]] || die "the macos slice builds on macOS with Xcode $XCODE_VERSION"
-    xcodebuild -version | head -1 | grep -qx "Xcode $XCODE_VERSION" || die "needs Xcode $XCODE_VERSION (xcode-select -s), not $(xcodebuild -version | head -1)"
+    # Read to the end: `head -1 | grep -q` closes the pipe early and xcodebuild aborts on the broken pipe (a CI flake).
+    xcode="$(xcodebuild -version | sed -n 1p)"
+    [[ "$xcode" == "Xcode $XCODE_VERSION" ]] || die "needs Xcode $XCODE_VERSION (xcode-select -s), not $xcode"
     fetch angle-arm64-macos.zip 9eadd2055f66507e9d74655e7683e068e7e4a9dade5a84bc03d3f5affdfb7b9d "$angle-arm64-macos-release.zip"
     fetch angle-x86_64-macos.zip 4e11d10e01b4a5e06f24afbafc3302d7ee3135bd6b076d6f818b1c87a8b18b94 "$angle-x86_64-macos-release.zip"
     accesskit
