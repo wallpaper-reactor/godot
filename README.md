@@ -23,7 +23,7 @@ checks the commit, applies the patches and builds every slice.
 | `scripts/build.sh` | Builds one slice. Every toolchain and archive is pinned by version or SHA-256 |
 | `scripts/deny-header.py` | Generates the C++ header the deny-list hook includes |
 | `check/` | The hardening check: runs a pack in the built engine and probes what it can reach |
-| `tests/` | Tests for the scripts and the patches (`node --test tests/`) |
+| `tests/` | Tests for the scripts and the patches (`node --test tests/*.test.mjs`) |
 
 ## Building
 
